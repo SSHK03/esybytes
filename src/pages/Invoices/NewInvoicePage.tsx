@@ -22,14 +22,23 @@ export default function NewInvoicePage() {
     value: string
   ) => {
     const updatedItems = [...items];
+
+    // Ensure proper type assignment
     if (field === 'quantity' || field === 'rate') {
-      updatedItems[index][field] = Number(value);
-    } else {
-      updatedItems[index][field] = value;
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: Number(value),
+      };
+    } else if (field === 'name') {
+      updatedItems[index] = {
+        ...updatedItems[index],
+        [field]: value,
+      };
     }
 
+    // Recalculate amount
     updatedItems[index].amount =
-      Number(updatedItems[index].quantity) * Number(updatedItems[index].rate);
+      updatedItems[index].quantity * updatedItems[index].rate;
 
     setItems(updatedItems);
   };
@@ -108,7 +117,9 @@ export default function NewInvoicePage() {
               type="number"
               placeholder="Qty"
               value={item.quantity}
-              onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+              onChange={(e) =>
+                handleItemChange(idx, 'quantity', e.target.value)
+              }
               className="border px-2 py-1 rounded"
               required
             />

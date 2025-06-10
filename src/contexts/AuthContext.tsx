@@ -1,83 +1,126 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
-import { toast } from 'react-toastify';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { api } from '../lib/api';
+
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  organizationId: string;
+  organizationRole: string;
+}
 
 interface AuthContextType {
-  isAuthenticated: boolean;
-  user: any;
+  user: User | null;
+  token: string | null;
   login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string) => Promise<void>;
-  logout: () => Promise<void>;
+  register: (userData: RegisterData) => Promise<void>;
+  logout: () => void;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+}
+
+interface RegisterData {
+  email: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+  organizationName: string;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [user, setUser] = useState(null);
-
-  useEffect(() => {
-    // Check active session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session);
-      setUser(session?.user || null);
-    });
-
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session);
-      setUser(session?.user || null);
-    });
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, []);
-
-  const login = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      toast.success('Logged in successfully');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to login');
-      throw error;
-    }
-  };
-
-  const register = async (email: string, password: string) => {
-    try {
-      const { error } = await supabase.auth.signUp({ email, password });
-      if (error) throw error;
-      toast.success('Registration successful! Please check your email to verify your account.');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to register');
-      throw error;
-    }
-  };
-
-  const logout = async () => {
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (error) throw error;
-      toast.success('Logged out successfully');
-    } catch (error: any) {
-      toast.error(error.message || 'Failed to logout');
-      throw error;
-    }
-  };
-
-  return (
-    <AuthContext.Provider value={{ isAuthenticated, user, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
-  );
-}
-
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+};
+
+interface AuthProviderProps {
+  children: ReactNode;
 }
+
+export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Check for existing token on app load
+  useEffect(() => {
+    const storedToken = localStorage.getItem('authToken');
+    if (storedToken) {
+      setToken(storedToken);
+      // Set token in API headers
+      api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+      // Fetch user profile
+      fetchUserProfile();
+    } else {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await api.get('/auth/profile');
+      setUser(response.data.user);
+    } catch (error) {
+      // Token is invalid, clear it
+      localStorage.removeItem('authToken');
+      setToken(null);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const login = async (email: string, password: string) => {
+    try {
+      const response = await api.post('/auth/login', { email, password });
+      const { token: newToken, user: userData } = response.data;
+      
+      // Store token
+      localStorage.setItem('authToken', newToken);
+      setToken(newToken);
+      setUser(userData);
+      
+      // Set token in API headers
+      api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Login failed');
+    }
+  };
+
+  const register = async (userData: RegisterData) => {
+    try {
+      await api.post('/auth/register', userData);
+    } catch (error: any) {
+      throw new Error(error.response?.data?.error || 'Registration failed');
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('authToken');
+    setToken(null);
+    setUser(null);
+    delete api.defaults.headers.common['Authorization'];
+  };
+
+  const value: AuthContextType = {
+    user,
+    token,
+    login,
+    register,
+    logout,
+    isLoading,
+    isAuthenticated: !!user && !!token,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};

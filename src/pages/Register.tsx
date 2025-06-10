@@ -9,7 +9,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
-  const { signUp } = useAuth();
+  const { register } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,7 +22,13 @@ export default function Register() {
     setIsLoading(true);
 
     try {
-      await signUp(email, password);
+      await register({
+        email,
+        password,
+        firstName: 'Admin',
+        lastName: 'User',
+        organizationName: 'AdminOrg'
+      });
       toast.success('Registration successful! Please sign in.');
       navigate('/login');
     } catch (error: any) {
